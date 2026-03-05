@@ -36,7 +36,22 @@ $v-layout-margin-right: 25px;
    }
    
    .toolbar {
-     margin-bottom: 3px;
+     margin-bottom: 0px;
+   }
+
+   .toolbar-row {
+     display: flex;
+     justify-content: space-between;
+     gap: 4px;
+     margin-bottom: 4px;
+   }
+
+   .toolbar-flex-item {
+     flex: 1 1 48%;
+     box-sizing: border-box;
+     overflow: hidden;
+     text-overflow: ellipsis;
+     white-space: nowrap;
    }
    
    .apply-button {
@@ -46,6 +61,10 @@ $v-layout-margin-right: 25px;
       z-index: 10000;
    }
    
+   .toolbar-btn {
+      text-align: left;
+   }
+
    .v-slot {
       clear: none;
    }

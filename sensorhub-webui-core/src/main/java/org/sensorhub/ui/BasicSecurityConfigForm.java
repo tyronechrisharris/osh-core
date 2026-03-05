@@ -38,12 +38,26 @@ import com.vaadin.ui.Button;
 import com.vaadin.ui.HorizontalLayout;
 import com.vaadin.v7.ui.Table;
 import com.vaadin.v7.ui.TreeTable;
+import com.vaadin.v7.ui.Field;
 import com.vaadin.ui.VerticalLayout;
 import com.vaadin.ui.Window;
+import com.vaadin.ui.Notification;
 import com.vaadin.ui.Button.ClickEvent;
 import com.vaadin.ui.Button.ClickListener;
 import com.vaadin.v7.ui.Table.CellStyleGenerator;
 import com.vaadin.v7.ui.Table.ColumnHeaderMode;
+import com.vaadin.ui.Label;
+import com.vaadin.shared.ui.ContentMode;
+import com.vaadin.ui.TextField;
+import org.sensorhub.impl.security.TOTPUtils;
+import com.vaadin.server.StreamResource;
+import com.vaadin.ui.Image;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.client.j2se.MatrixToImageWriter;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
 
 
 @SuppressWarnings("serial")
@@ -71,6 +85,145 @@ public class BasicSecurityConfigForm extends GenericConfigForm
             this.permConfig = (PermissionsConfig)beanItem.getBean();
         
         super.build(title, popupText, beanItem, includeSubForms);
+
+        if (beanItem.getBean() instanceof BasicSecurityRealmConfig.UserConfig)
+            buildTwoFactorSection((BasicSecurityRealmConfig.UserConfig)beanItem.getBean());
+    }
+
+    @Override
+    protected boolean isFieldVisible(String propId)
+    {
+        if (propId.endsWith("twoFactorSecret") || propId.endsWith("isTwoFactorEnabled"))
+            return false;
+
+        return super.isFieldVisible(propId);
+    }
+
+    private void buildTwoFactorSection(final BasicSecurityRealmConfig.UserConfig userConfig)
+    {
+        VerticalLayout layout = new VerticalLayout();
+        layout.setCaption(I18N.get("twofactorAuthentication1"));
+        layout.setMargin(true);
+        layout.setSpacing(true);
+
+        final Label statusLabel = new Label();
+        statusLabel.setContentMode(ContentMode.HTML);
+        update2FAStatusLabel(statusLabel, userConfig.isTwoFactorEnabled);
+        layout.addComponent(statusLabel);
+
+        final Button setupButton = new Button(userConfig.isTwoFactorEnabled ? I18N.get("reset2FA1") : I18N.get("enable2FA1"));
+        setupButton.addClickListener(new ClickListener() {
+            @Override
+            public void buttonClick(ClickEvent event)
+            {
+                show2FASetupPopup(userConfig, statusLabel, setupButton);
+            }
+        });
+        layout.addComponent(setupButton);
+
+        this.addComponent(layout);
+    }
+
+    private void update2FAStatusLabel(Label label, boolean enabled)
+    {
+        if (enabled)
+            label.setValue("Status: <span style='color:green;font-weight:bold'>ENABLED</span>");
+        else
+            label.setValue("Status: <span style='color:red;font-weight:bold'>DISABLED</span>");
+    }
+
+    private void show2FASetupPopup(final BasicSecurityRealmConfig.UserConfig userConfig, final Label statusLabel, final Button setupButton)
+    {
+        // retrieve user ID from field if possible as it may have changed
+        String userID = userConfig.userID;
+        if (this.fieldGroup != null)
+        {
+            Field<?> field = this.fieldGroup.getField("userID");
+            if (field != null && field.getValue() != null)
+                userID = field.getValue().toString();
+        }
+
+        if (userID == null || userID.trim().isEmpty())
+        {
+            Notification.show(I18N.get("pleaseEnterAUserIDFirst1"), Notification.Type.WARNING_MESSAGE);
+            return;
+        }
+
+        final Window popup = new Window(I18N.get("setupTwoFactorAuthentication1"));
+        popup.setModal(true);
+        popup.setWidth("400px");
+        popup.center();
+
+        VerticalLayout content = new VerticalLayout();
+        content.setMargin(true);
+        content.setSpacing(true);
+
+        final String secret = TOTPUtils.generateSecret();
+        final String qrUrl = TOTPUtils.getQRUrl(userID, secret);
+
+        content.addComponent(new Label(I18N.get("1ScanThisQrCodeWithYourAuthenticatorApp1")));
+
+        if (qrUrl != null)
+        {
+            try
+            {
+                StreamResource resource = new StreamResource(() -> {
+                    try {
+                        QRCodeWriter qrCodeWriter = new QRCodeWriter();
+                        BitMatrix bitMatrix = qrCodeWriter.encode(qrUrl, BarcodeFormat.QR_CODE, 200, 200);
+                        ByteArrayOutputStream pngOutputStream = new ByteArrayOutputStream();
+                        MatrixToImageWriter.writeToStream(bitMatrix, "PNG", pngOutputStream);
+                        return new ByteArrayInputStream(pngOutputStream.toByteArray());
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        return null;
+                    }
+                }, "qr_" + System.currentTimeMillis() + ".png");
+
+                Image qrImage = new Image(null, resource);
+                content.addComponent(qrImage);
+            }
+            catch (Exception e)
+            {
+                content.addComponent(new Label(I18N.get("errorGeneratingQrCode1")));
+            }
+        }
+
+        content.addComponent(new Label(I18N.get("orEnterThisSecretKeyManually1")));
+
+        // format secret for display
+        String secretDisplay = secret.replaceAll("(.{4})", "$1 ").trim();
+        content.addComponent(new Label("<span style='font-family:monospace;font-size:1.2em;font-weight:bold'>" + secretDisplay + "</span>", ContentMode.HTML));
+
+        content.addComponent(new Label(I18N.get("2EnterThe6digitCodeGeneratedByTheApp1")));
+
+        final TextField codeField = new TextField();
+        content.addComponent(codeField);
+
+        Button verifyButton = new Button(I18N.get("verifyAndEnable1"));
+        verifyButton.addClickListener(new ClickListener() {
+            @Override
+            public void buttonClick(ClickEvent event)
+            {
+                if (TOTPUtils.validateCode(secret, codeField.getValue()))
+                {
+                    userConfig.twoFactorSecret = secret;
+                    userConfig.isTwoFactorEnabled = true;
+                    update2FAStatusLabel(statusLabel, true);
+                    setupButton.setCaption(I18N.get("reset2FA1"));
+                    popup.close();
+                    com.vaadin.ui.Notification.show(I18N.get("twoFAEnabledSuccessfully1"));
+                }
+                else
+                {
+                    com.vaadin.ui.Notification.show(I18N.get("invalidCode1"), com.vaadin.ui.Notification.Type.ERROR_MESSAGE);
+                }
+            }
+        });
+        content.addComponent(verifyButton);
+
+        popup.setContent(content);
+        getUI().addWindow(popup);
     }
     
     
@@ -99,8 +252,8 @@ public class BasicSecurityConfigForm extends GenericConfigForm
             HorizontalLayout layout = new HorizontalLayout();
             layout.setWidth(100.0f, Unit.PERCENTAGE);
             layout.setSpacing(true);
-            layout.setCaption("Permissions");
-            layout.setDescription("Allowed and denied permissions for users with this role");
+            layout.setCaption(I18N.get("permissions1"));
+            layout.setDescription(I18N.get("allowedAndDeniedPermissionsForUsersWithThisRole1"));
             
             // permission table
             buildTable(layout);
