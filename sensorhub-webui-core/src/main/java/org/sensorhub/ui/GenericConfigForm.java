@@ -55,6 +55,7 @@ import org.sensorhub.ui.data.MyBeanItem;
 import org.sensorhub.ui.data.MyBeanItemContainer;
 import com.vaadin.v7.data.Buffered.SourceException;
 import com.vaadin.v7.data.Property;
+import com.vaadin.v7.data.Validator;
 import com.vaadin.v7.data.Validator.InvalidValueException;
 import com.vaadin.v7.data.fieldgroup.FieldGroup;
 import com.vaadin.v7.data.fieldgroup.FieldGroup.CommitEvent;
@@ -62,7 +63,12 @@ import com.vaadin.v7.data.fieldgroup.FieldGroup.CommitException;
 import com.vaadin.v7.data.fieldgroup.FieldGroup.CommitHandler;
 import com.vaadin.v7.data.util.converter.StringToDoubleConverter;
 import com.vaadin.v7.data.util.converter.StringToFloatConverter;
+import com.vaadin.v7.data.validator.ByteRangeValidator;
+import com.vaadin.v7.data.validator.DoubleRangeValidator;
+import com.vaadin.v7.data.validator.FloatRangeValidator;
 import com.vaadin.v7.data.validator.IntegerRangeValidator;
+import com.vaadin.v7.data.validator.LongRangeValidator;
+import com.vaadin.v7.data.validator.ShortRangeValidator;
 import com.vaadin.v7.data.validator.StringLengthValidator;
 import org.slf4j.Logger;
 import org.vast.util.BaseBuilder;
@@ -329,6 +335,15 @@ public class GenericConfigForm extends VerticalLayout implements IModuleConfigFo
         {
             field.setWidth(100, Unit.PIXELS);
         }
+        else if (propType.equals(long.class) || propType.equals(Long.class))
+        {
+            field.setWidth(150, Unit.PIXELS);
+        }
+        else if (propType.equals(short.class) || propType.equals(Short.class) ||
+                propType.equals(byte.class) || propType.equals(Byte.class))
+        {
+            field.setWidth(100, Unit.PIXELS);
+        }
         else if (propType.equals(float.class) || propType.equals(Float.class))
         {
             field.setWidth(100, Unit.PIXELS);
@@ -430,8 +445,9 @@ public class GenericConfigForm extends VerticalLayout implements IModuleConfigFo
             {
                 if (propType.equals(String.class))
                     field.addValidator(new StringLengthValidator(tr("validation.required"), 1, Integer.MAX_VALUE, false));
-                else if (propType.equals(int.class) || propType.equals(Integer.class))
-                    field.addValidator(new IntegerRangeValidator(tr("validation.required"), Integer.MIN_VALUE, Integer.MAX_VALUE));
+                else if (isIntegralType(propType))
+                    field.addValidator(createNumericRangeValidator(propType, tr("validation.required"),
+                            Long.MIN_VALUE, Long.MAX_VALUE));
             }
                 
             // valid range
@@ -439,11 +455,64 @@ public class GenericConfigForm extends VerticalLayout implements IModuleConfigFo
             if (range != null)
             {
                 String msg = tr("validation.range", range.min(), range.max());
-                field.addValidator(new IntegerRangeValidator(msg, (int)range.min(), (int)range.max()));
+                field.addValidator(createNumericRangeValidator(propType, msg, range.min(), range.max()));
             }
         }
         
         return field;
+    }
+
+
+    static boolean isIntegralType(Class<?> type)
+    {
+        return type.equals(long.class) || type.equals(Long.class) ||
+                type.equals(int.class) || type.equals(Integer.class) ||
+                type.equals(short.class) || type.equals(Short.class) ||
+                type.equals(byte.class) || type.equals(Byte.class);
+    }
+
+
+    static Validator createNumericRangeValidator(Class<?> type, String message, long minimum, long maximum)
+    {
+        if (minimum > maximum)
+            throw new IllegalArgumentException("Numeric field minimum is greater than its maximum");
+
+        if (type.equals(long.class) || type.equals(Long.class))
+            return new LongRangeValidator(message, minimum, maximum);
+        else if (type.equals(int.class) || type.equals(Integer.class))
+            return new IntegerRangeValidator(message,
+                    (int)intersectMinimum(minimum, maximum, Integer.MIN_VALUE, Integer.MAX_VALUE),
+                    (int)intersectMaximum(minimum, maximum, Integer.MIN_VALUE, Integer.MAX_VALUE));
+        else if (type.equals(short.class) || type.equals(Short.class))
+            return new ShortRangeValidator(message,
+                    (short)intersectMinimum(minimum, maximum, Short.MIN_VALUE, Short.MAX_VALUE),
+                    (short)intersectMaximum(minimum, maximum, Short.MIN_VALUE, Short.MAX_VALUE));
+        else if (type.equals(byte.class) || type.equals(Byte.class))
+            return new ByteRangeValidator(message,
+                    (byte)intersectMinimum(minimum, maximum, Byte.MIN_VALUE, Byte.MAX_VALUE),
+                    (byte)intersectMaximum(minimum, maximum, Byte.MIN_VALUE, Byte.MAX_VALUE));
+        else if (type.equals(float.class) || type.equals(Float.class))
+            return new FloatRangeValidator(message, (float)minimum, (float)maximum);
+        else if (type.equals(double.class) || type.equals(Double.class))
+            return new DoubleRangeValidator(message, (double)minimum, (double)maximum);
+        else
+            throw new IllegalArgumentException("ValueRange can only be used on a numeric configuration field");
+    }
+
+
+    static long intersectMinimum(long minimum, long maximum, long typeMinimum, long typeMaximum)
+    {
+        if (maximum < typeMinimum || minimum > typeMaximum)
+            throw new IllegalArgumentException("Numeric field range does not intersect its Java type");
+        return Math.max(minimum, typeMinimum);
+    }
+
+
+    static long intersectMaximum(long minimum, long maximum, long typeMinimum, long typeMaximum)
+    {
+        if (maximum < typeMinimum || minimum > typeMaximum)
+            throw new IllegalArgumentException("Numeric field range does not intersect its Java type");
+        return Math.min(maximum, typeMaximum);
     }
     
     

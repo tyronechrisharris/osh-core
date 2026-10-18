@@ -65,6 +65,8 @@ import com.vaadin.v7.data.util.converter.Converter;
 import com.vaadin.v7.data.util.converter.ConverterFactory;
 import com.vaadin.v7.data.util.converter.DefaultConverterFactory;
 import com.vaadin.v7.data.util.converter.StringToIntegerConverter;
+import com.vaadin.v7.data.util.converter.StringToLongConverter;
+import com.vaadin.v7.data.util.converter.StringToShortConverter;
 import com.vaadin.event.Action;
 import com.vaadin.event.Action.Handler;
 import com.vaadin.v7.event.ItemClickEvent;
@@ -173,29 +175,8 @@ public class AdminUI extends com.vaadin.ui.UI implements UIConstants
             return;
         }
 
-        // register new field converter for integer numbers
-        ConverterFactory converterFactory = new DefaultConverterFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            protected <Presentation, Model> Converter<Presentation, Model> findConverter(
-                    Class<Presentation> presentationType, Class<Model> modelType) {
-                // Handle String <-> Integer/Short/Long
-                if (presentationType == String.class &&
-                        (modelType == Long.class || modelType == Integer.class || modelType == Short.class )) {
-                    return (Converter<Presentation, Model>) new StringToIntegerConverter() {
-                        @Override
-                        protected NumberFormat getFormat(Locale locale) {
-                            NumberFormat format = super.getFormat(Locale.US);
-                            format.setGroupingUsed(false);
-                            return format;
-                        }
-                    };
-                }
-                // Let default factory handle the rest
-                return super.findConverter(presentationType, modelType);
-            }
-        };
-        VaadinSession.getCurrent().setConverterFactory(converterFactory);
+        // register field converters for whole numbers without locale grouping
+        VaadinSession.getCurrent().setConverterFactory(createConfigConverterFactory());
 
         // init main panels
         HorizontalSplitPanel splitPanel = new HorizontalSplitPanel();
@@ -299,6 +280,62 @@ public class AdminUI extends com.vaadin.ui.UI implements UIConstants
                 .withTopicID(ModuleRegistry.EVENT_GROUP_ID)
                 .consume(this::handleEvent)
                 .thenAccept(s -> moduleEventsSub = s);
+    }
+
+
+    static ConverterFactory createConfigConverterFactory()
+    {
+        return new DefaultConverterFactory() {
+            @Override
+            @SuppressWarnings("unchecked")
+            protected <Presentation, Model> Converter<Presentation, Model> findConverter(
+                    Class<Presentation> presentationType, Class<Model> modelType)
+            {
+                if (presentationType == String.class &&
+                        (modelType == Long.class || modelType == Long.TYPE))
+                {
+                    return (Converter<Presentation, Model>) new StringToLongConverter() {
+                        @Override
+                        protected NumberFormat getFormat(Locale locale)
+                        {
+                            return createWholeNumberFormat();
+                        }
+                    };
+                }
+                else if (presentationType == String.class &&
+                        (modelType == Integer.class || modelType == Integer.TYPE))
+                {
+                    return (Converter<Presentation, Model>) new StringToIntegerConverter() {
+                        @Override
+                        protected NumberFormat getFormat(Locale locale)
+                        {
+                            return createWholeNumberFormat();
+                        }
+                    };
+                }
+                else if (presentationType == String.class &&
+                        (modelType == Short.class || modelType == Short.TYPE))
+                {
+                    return (Converter<Presentation, Model>) new StringToShortConverter() {
+                        @Override
+                        protected NumberFormat getFormat(Locale locale)
+                        {
+                            return createWholeNumberFormat();
+                        }
+                    };
+                }
+
+                return super.findConverter(presentationType, modelType);
+            }
+        };
+    }
+
+
+    static NumberFormat createWholeNumberFormat()
+    {
+        NumberFormat format = NumberFormat.getIntegerInstance(Locale.US);
+        format.setGroupingUsed(false);
+        return format;
     }
 
 
