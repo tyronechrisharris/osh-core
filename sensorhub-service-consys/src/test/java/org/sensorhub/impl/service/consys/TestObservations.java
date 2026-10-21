@@ -20,9 +20,18 @@ import java.io.StringWriter;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 import org.junit.Before;
 import org.junit.Test;
+import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.common.SensorHubException;
+import org.sensorhub.api.data.IObsData;
+import org.sensorhub.api.datastore.obs.IObsStore;
+import org.sensorhub.api.datastore.obs.ObsFilter;
+import org.sensorhub.impl.service.consys.obs.ObsHandler;
+import org.sensorhub.impl.service.consys.obs.ObsStoreWrapper;
+import org.sensorhub.impl.service.consys.resource.BaseResourceHandler;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -84,6 +93,30 @@ public class TestObservations extends AbstractTestApiBase
         // get list of obs
         var jsonResp = sendGetRequestAndParseJson(concat(dsUrl, OBS_COLLECTION));
         checkCollectionItemIds(urls, jsonResp);
+    }
+
+
+    @Test
+    public void testObservationCollectionSelectsDatastoreOncePerPage() throws Exception
+    {
+        var sysUrl = systemTests.addFeature(7);
+        var dsUrl = datastreamTests.addDatastreamOmJson(sysUrl, 116);
+        addObservationBatch(dsUrl, Instant.now(), 100, 5, false);
+
+        var rootHandler = (RootHandler)service.getServlet().getRootHandler();
+        var obsHandler = (ObsHandler)rootHandler.subResources.get(OBS_COLLECTION);
+        var dataStoreField = BaseResourceHandler.class.getDeclaredField("dataStore");
+        dataStoreField.setAccessible(true);
+        var countingStore = new CountingObsStore((IObsStore)dataStoreField.get(obsHandler));
+        dataStoreField.set(obsHandler, countingStore);
+
+        sendGetRequestAndGetItems(concat(dsUrl, OBS_COLLECTION) + "?offset=0&limit=2", 2);
+        assertEquals("A collection page must execute one datastore selection", 1,
+                countingStore.selectionCount.get());
+
+        sendGetRequestAndGetItems(concat(dsUrl, OBS_COLLECTION) + "?offset=2&limit=2", 2);
+        assertEquals("Each additional page must execute one additional datastore selection", 2,
+                countingStore.selectionCount.get());
     }
     
     
@@ -229,5 +262,25 @@ public class TestObservations extends AbstractTestApiBase
         actual.remove("id");
         actual.remove("datastream@id");
         assertEquals(expected, actual);
+    }
+
+
+    private static class CountingObsStore extends ObsStoreWrapper
+    {
+        final AtomicInteger selectionCount = new AtomicInteger();
+
+
+        CountingObsStore(IObsStore delegate)
+        {
+            super(delegate, delegate);
+        }
+
+
+        @Override
+        public Stream<Entry<BigId, IObsData>> selectEntries(ObsFilter filter)
+        {
+            selectionCount.incrementAndGet();
+            return super.selectEntries(filter);
+        }
     }
 }
