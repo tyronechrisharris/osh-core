@@ -309,8 +309,15 @@ public class MVObsStoreImpl implements IObsStore
         
         // scan using a cursor on main obs index
         // recreating full entries in the process
-        RangeCursor<MVTimeSeriesRecordKey, IObsData> cursor = getObsCursor(series.id, phenomenonTimeRange);
-        return cursor.entryStream();
+        final Range<Instant> selectedPhenomenonTimeRange = phenomenonTimeRange;
+        RangeCursor<MVTimeSeriesRecordKey, IObsData> cursor = getObsCursor(
+            series.id, selectedPhenomenonTimeRange);
+        // RangeCursor is inclusive at both physical endpoints. Preserve the caller's Guava
+        // bound types here so a closed-open retention window cannot leak its upper endpoint
+        // into selection or deletion. This also lets callers rely on TemporalFilter semantics
+        // without adding a Java value predicate that disables SQL-side limiting in other stores.
+        return cursor.entryStream()
+            .filter(entry -> selectedPhenomenonTimeRange.contains(entry.getKey().timeStamp));
     }
     
     
