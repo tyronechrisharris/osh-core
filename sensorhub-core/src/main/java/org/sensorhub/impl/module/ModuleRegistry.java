@@ -1366,6 +1366,10 @@ public class ModuleRegistry implements IModuleManager<IModule<?>>, IEventListene
         synchronized (waitForModuleFutures)
         {
             var future = new WaitFuture<T>(predicate);
+            // A caller commonly applies its own timeout to this future.  Keep a cancelled
+            // waiter from being retained indefinitely when no later module event can satisfy
+            // its predicate (for example while the registry is shutting down).
+            future.whenComplete((result, error) -> waitForModuleFutures.remove(future));
             
             var modules = getLoadedModules();
             for (var m: modules)
@@ -1380,6 +1384,15 @@ public class ModuleRegistry implements IModuleManager<IModule<?>>, IEventListene
             waitForModuleFutures.add(future);
             return future;
         }
+    }
+
+
+    /**
+     * @return true after whole-registry shutdown has been requested
+     */
+    public boolean isShuttingDown()
+    {
+        return shutdownCalled;
     }
     
     

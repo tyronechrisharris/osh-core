@@ -131,6 +131,18 @@ public class TestModuleRegistry
         
         System.out.println();
     }
+
+
+    @Test
+    public void testCancelledModuleWaitIsUnregistered()
+    {
+        var future = registry.waitForModule(module -> false);
+        assertEquals(1, registry.waitForModuleFutures.size());
+
+        assertTrue(future.cancel(false));
+
+        assertTrue(registry.waitForModuleFutures.isEmpty());
+    }
     
     
     @Test
