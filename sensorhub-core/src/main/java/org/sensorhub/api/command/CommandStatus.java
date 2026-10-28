@@ -15,6 +15,7 @@ Copyright (C) 2019 Sensia Software LLC. All Rights Reserved.
 package org.sensorhub.api.command;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import org.sensorhub.api.common.BigId;
 import org.sensorhub.api.utils.OshAsserts;
 import org.sensorhub.utils.ObjectUtils;
@@ -51,7 +52,7 @@ public class CommandStatus implements ICommandStatus
     protected CommandStatus(BigId commandID, CommandStatusCode statusCode, TimeExtent executionTime)
     {
         this.commandID = commandID;
-        this.reportTime = Instant.now();
+        this.reportTime = Instant.now().truncatedTo(ChronoUnit.MICROS);
         this.executionTime = executionTime;
         this.statusCode = Asserts.checkNotNull(statusCode, CommandStatusCode.class);
     }
@@ -348,7 +349,7 @@ public class CommandStatus implements ICommandStatus
         {
             OshAsserts.checkValidInternalID(instance.commandID, "commandID");
             if (instance.reportTime == null)
-                instance.reportTime = Instant.now();
+                instance.reportTime = Instant.now().truncatedTo(ChronoUnit.MICROS);
             return super.build();
         }
     }
